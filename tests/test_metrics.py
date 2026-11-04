@@ -109,6 +109,18 @@ class Tests(unittest.TestCase):
         self.assertTrue(s["etf"])
         self.assertEqual((s["price"], s["ma200"]), (500, 500))
         self.assertNotIn("pe", s)
+        self.assertEqual(s["yld"], 0)
+
+    def test_etf_yield_counts_last_year_only(self):
+        rows = prices(100)
+        rows[-5]["divCash"], rows[-300]["divCash"] = 3.0, 50.0
+        self.assertEqual(compute_etf("Q", "", rows)["yld"], 3)
+
+    def test_operating_income_reported(self):
+        c = company()
+        c["facts"]["us-gaap"]["OperatingIncomeLoss"] = {"units": {"USD": [flow("2025-01-01", "2025-12-31", 10e9, "2026-02-01"), flow("2026-01-01", "2026-09-30", 9e9, "2026-10-20", "10-Q"), flow("2025-01-01", "2025-09-30", 7e9, "2025-11-01", "10-Q")]}}
+        s = compute("X", "", "Example", prices(), c)
+        self.assertEqual((s["opT"], s["niT"]), (12000, 34000))
 
 
 if __name__ == "__main__":

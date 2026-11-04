@@ -4,6 +4,7 @@ from datetime import date, timedelta
 REVENUE = ["RevenueFromContractWithCustomerExcludingAssessedTax", "RevenueFromContractWithCustomerIncludingAssessedTax", "Revenues", "SalesRevenueNet", "SalesRevenueGoodsNet"]
 NET_INCOME = ["NetIncomeLoss", "NetIncomeLossAvailableToCommonStockholdersBasic", "ProfitLoss"]
 EPS = ["EarningsPerShareDiluted", "EarningsPerShareBasicAndDiluted", "EarningsPerShareBasic"]
+OPERATING = ["OperatingIncomeLoss"]
 OCF = ["NetCashProvidedByUsedInOperatingActivities", "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"]
 CAPEX = ["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets"]
 EQUITY = ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"]
@@ -120,8 +121,9 @@ def price_fields(prices):
     last = series[-1]
     closes = [p["close"] for p in series]
     year = [p for p in series if p["date"] > last["date"] - timedelta(days=365)]
+    paid = sum(r.get("divCash") or 0 for r in prices if d(r["date"]) > last["date"] - timedelta(days=365))
     return {
-        "asof": last["date"].isoformat(), "price": round(last["close"], 2), "ma200": round(sum(closes[-200:]) / 200, 2),
+        "yld": round(paid / last["close"] * 100, 2), "asof": last["date"].isoformat(), "price": round(last["close"], 2), "ma200": round(sum(closes[-200:]) / 200, 2),
         "lo": round(min(p["low"] for p in year), 2), "hi": round(max(p["high"] for p in year), 2), "rsi": round(rsi14(closes), 2),
     }
 
@@ -157,6 +159,8 @@ def compute(ticker, label, title, prices, cf):
     if eps_t <= 0:
         raise DataError("최근 12개월이 적자여서 PER을 계산할 수 없습니다")
     fcf_t = ocf_t - capex_t
+    op_rows = facts(cf, OPERATING)
+    op_t = ttm(op_rows, anchor) if op_rows else None
 
     eps_year = {}
     for f in annuals(eps):
@@ -218,6 +222,6 @@ def compute(ticker, label, title, prices, cf):
         "roe": roe, "de": de, "fy": [f"FY{str(end.year)[2:]}" for end in ends], "peH": pe_hist, "fcfH": fcf_hist,
         "rev": round((rev_t / rev_ago - 1) * 100, 2), "epsT": round(eps_t, 2), "epsAgo": round(eps_ago, 2),
         "epsFY": round(eps_year[ends[-1]], 2), "eps2": round(eps_year[two_ago], 2),
-        "fcfT": round(fcf_t / 1e6), "fcf2": round(fcf_year[two_ago] / 1e6), "y2": f"FY{str(two_ago.year)[2:]}",
+        "niT": round(ni_t / 1e6), "opT": None if op_t is None else round(op_t / 1e6), "fcfT": round(fcf_t / 1e6), "fcf2": round(fcf_year[two_ago] / 1e6), "y2": f"FY{str(two_ago.year)[2:]}",
         "period": anchor.isoformat(),
     }
