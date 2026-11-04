@@ -156,8 +156,6 @@ def compute(ticker, label, title, prices, cf):
     ocf_t, capex_t = ttm(ocf, anchor), ttm(capex, anchor) if capex else 0
     if None in (eps_t, ni_t, rev_t, rev_ago, ocf_t, capex_t, eps_ago):
         raise DataError("최근 12개월 실적을 계산하지 못했습니다")
-    if eps_t <= 0:
-        raise DataError("최근 12개월이 적자여서 PER을 계산할 수 없습니다")
     fcf_t = ocf_t - capex_t
     op_rows = facts(cf, OPERATING)
     op_t = ttm(op_rows, anchor) if op_rows else None
@@ -188,13 +186,12 @@ def compute(ticker, label, title, prices, cf):
             continue
         pe_hist.append(round(price / e, 2))
         fcf_hist.append(round(fcf_year[end] / (price * n / e) * 100, 2))
-    if len([x for x in pe_hist if x is not None]) < 3:
-        raise DataError("비교할 과거 PER이 3개 미만입니다")
+    price_only = eps_t <= 0 or len([x for x in pe_hist if x is not None]) < 3
 
     shares_rows = facts(cf, ["EntityCommonStockSharesOutstanding"], "shares", "dei") or facts(cf, ["CommonStockSharesOutstanding"], "shares")
     latest_shares = latest_instant(shares_rows, last["date"])
-    shares = shares_now(latest_shares) if latest_shares else ni_t / eps_t
-    fcfy = fcf_t / (last["close"] * shares) * 100
+    shares = shares_now(latest_shares) if latest_shares else (ni_t / eps_t if eps_t > 0 else None)
+    fcfy = round(fcf_t / (last["close"] * shares) * 100, 2) if shares else None
 
     equity_rows = facts(cf, EQUITY)
     eq_now, eq_ago = latest_instant(equity_rows, anchor), latest_instant(equity_rows, ago)
@@ -218,7 +215,8 @@ def compute(ticker, label, title, prices, cf):
         "t": ticker, "ko": label or title, "en": title, "asof": last["date"].isoformat(),
         "price": round(last["close"], 2), "ma200": round(sum(closes[-200:]) / 200, 2),
         "lo": round(min(p["low"] for p in year), 2), "hi": round(max(p["high"] for p in year), 2),
-        "rsi": round(rsi14(closes), 2), "pe": round(last["close"] / eps_t, 2), "fcfy": round(fcfy, 2),
+        "rsi": round(rsi14(closes), 2), "pe": round(last["close"] / eps_t, 2) if eps_t > 0 else None, "fcfy": fcfy,
+        "priceOnly": price_only, "loss": eps_t <= 0,
         "roe": roe, "de": de, "fy": [f"FY{str(end.year)[2:]}" for end in ends], "peH": pe_hist, "fcfH": fcf_hist,
         "rev": round((rev_t / rev_ago - 1) * 100, 2), "epsT": round(eps_t, 2), "epsAgo": round(eps_ago, 2),
         "epsFY": round(eps_year[ends[-1]], 2), "eps2": round(eps_year[two_ago], 2),

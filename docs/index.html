@@ -139,10 +139,11 @@ a{color:var(--accent)}
       <li><b>밸류 점수:</b> 현재 PER 60%, 잉여현금흐름(FCF) 수익률 40%. 최근 회계연도 말(최대 5개)과 비교합니다.</li>
       <li><b>판정:</b> 두 점수의 평균이 65 이상이면 매력 구간, 35 이상이면 보통, 그 아래면 기다리기입니다. 200일선보다 25% 이상 높으면 기다리기입니다. 체력 점검을 3개 이하만 통과하면 평균이 50 이상일 때 싸지만 위험, 그 아래면 기다리기입니다.</li>
       <li><b>ETF:</b> 재무 공시가 없어 가격 점수만으로 같은 기준을 적용하고, 관심 가격은 200일선 +5%입니다. 최근 1년 분배율이 8% 이상이면 "매력 구간"으로 판정하지 않습니다.</li>
+      <li><b>적자 기업:</b> PER을 계산할 수 없으면 가격 점수와 체력 점검만 보고, "매력 구간"으로 판정하지 않습니다.</li>
       <li><b>이익 보정:</b> 최근 12개월 순이익이 영업이익의 1.25배를 넘으면 "매력 구간"으로 판정하지 않습니다.</li>
       <li><b>관심 가격:</b> 200일선 +5%와 "현재 주당순이익 × 5년 중앙 PER" 중 낮은 값입니다. <b>과열 가격:</b> 200일선 +25%입니다.</li>
     </ul>
-    <p>이 기준은 아직 과거 데이터로 검증하지 않은 초기값입니다. 가격은 장 마감 뒤 하루 한 번 갱신하는 종가 기준이고, 실적은 SEC에 제출된 최신 공시까지만 반영합니다. 금융주, ETF, 해외 기업, 적자 기업은 판독하지 못할 수 있습니다.</p>
+    <p>이 기준은 아직 과거 데이터로 검증하지 않은 초기값입니다. 가격은 장 마감 뒤 하루 한 번 갱신하는 종가 기준이고, 실적은 SEC에 제출된 최신 공시까지만 반영합니다. 금융주와 해외 기업은 판독하지 못할 수 있습니다.</p>
     <p>이 판정은 공개 지표를 규칙으로 계산한 참고 자료이며 투자 자문이 아닙니다.</p>
     <p>출처: 시세 <a href="https://www.tiingo.com/">Tiingo</a>, 재무 <a href="https://www.sec.gov/edgar/sec-api-documentation">SEC EDGAR</a>. Tiingo 무료 데이터는 개인 사용 조건이므로 이 페이지와 비밀번호를 다른 사람과 공유하지 마세요.</p>
   </section>
@@ -154,21 +155,27 @@ const clamp=(x,a=0,b=100)=>Math.min(b,Math.max(a,x));
 const ok=a=>a.filter(x=>x!=null);
 const median=a=>{const v=ok(a).sort((x,y)=>x-y);return v[Math.floor(v.length/2)]};
 const esc=x=>String(x).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-function analyze(s){
-  const gap=(s.price/s.ma200-1)*100, pos=(s.price-s.lo)/(s.hi-s.lo)*100;
-  const gapS=clamp((25-gap)/35*100), posS=clamp(100-pos), rsiS=clamp((70-s.rsi)/40*100);
-  const priceScore=.5*gapS+.3*posS+.2*rsiS;
-  if(s.etf){const highYield=(s.yld||0)>=8;let v=gap>=25?'wait':priceScore>=65?'good':priceScore>=35?'neutral':'wait';if(highYield&&v==='good')v='neutral';const m=s.ma200*1.05;return {highYield,etf:true,n:0,gapS,posS,rsiS,peAnchor:m,maAnchor:m,gap,pos,priceScore,valScore:null,peAbove:0,fcfBelow:0,checks:[],health:null,avg:priceScore,v,medPE:null,interest:m,basis:'200일선 +5%',over:s.ma200*1.25,spike:false}}
-  const n=ok(s.peH).length, peAbove=ok(s.peH).filter(x=>x>s.pe).length, fcfBelow=ok(s.fcfH).filter(x=>x<s.fcfy).length;
-  const valScore=.6*peAbove/n*100+.4*fcfBelow/n*100;
-  const checks=[
+function buildChecks(s){return [
    ['매출이 늘고 있다',s.rev>0,`${s.rev>0?'+':''}${s.rev}%`],
    [`주당순이익이 ${s.y2}보다 높다`,s.epsT>s.eps2,`$${s.epsT} / $${s.eps2}`],
    [`FCF가 ${s.y2}보다 많다`,s.fcfT>s.fcf2,`$${(s.fcfT/1000).toFixed(1)}B / $${(s.fcf2/1000).toFixed(1)}B`],
    ['ROE 15% 이상',s.roe!=null&&s.roe>=15,s.roe==null?'자료 없음':`${s.roe}%`],
    ['부채비율(D/E) 1.5 이하',s.de!=null&&s.de<=1.5,s.de==null?'자료 없음':`${s.de}`],
    ['최근 12개월 이익이 1년 전보다 높다',s.epsT>s.epsAgo,`$${s.epsT} / $${s.epsAgo}`]
-  ];
+]}
+function analyze(s){
+  const gap=(s.price/s.ma200-1)*100, pos=(s.price-s.lo)/(s.hi-s.lo)*100;
+  const gapS=clamp((25-gap)/35*100), posS=clamp(100-pos), rsiS=clamp((70-s.rsi)/40*100);
+  const priceScore=.5*gapS+.3*posS+.2*rsiS;
+  if(s.priceOnly){
+    const checks=buildChecks(s),health=checks.filter(c=>c[1]).length,m=s.ma200*1.05;
+    const v=health<=3?(priceScore>=50?'risk':'wait'):gap>=25?'wait':priceScore>=35?'neutral':'wait';
+    return {noVal:true,priceOnly:true,oneoff:false,highPE:false,n:0,gapS,posS,rsiS,peAnchor:m,maAnchor:m,gap,pos,priceScore,valScore:null,peAbove:0,fcfBelow:0,checks,health,avg:priceScore,v,medPE:null,interest:v==='risk'?null:m,basis:'200일선 +5%',over:s.ma200*1.25,spike:false};
+  }
+  if(s.etf){const highYield=(s.yld||0)>=8;let v=gap>=25?'wait':priceScore>=65?'good':priceScore>=35?'neutral':'wait';if(highYield&&v==='good')v='neutral';const m=s.ma200*1.05;return {noVal:true,highYield,etf:true,n:0,gapS,posS,rsiS,peAnchor:m,maAnchor:m,gap,pos,priceScore,valScore:null,peAbove:0,fcfBelow:0,checks:[],health:null,avg:priceScore,v,medPE:null,interest:m,basis:'200일선 +5%',over:s.ma200*1.25,spike:false}}
+  const n=ok(s.peH).length, peAbove=ok(s.peH).filter(x=>x>s.pe).length, fcfBelow=ok(s.fcfH).filter(x=>x<s.fcfy).length;
+  const valScore=.6*peAbove/n*100+.4*fcfBelow/n*100;
+  const checks=buildChecks(s);
   const health=checks.filter(c=>c[1]).length, avg=(priceScore+valScore)/2;
   let v;
   if(health<=3) v=avg>=50?'risk':'wait';
@@ -205,6 +212,7 @@ function warnings(s,a){
   if(a.oneoff)w.push(`최근 12개월 순이익 $${(s.niT/1000).toFixed(1)}B가 영업이익 $${(s.opT/1000).toFixed(1)}B보다 크게 많습니다. 투자 평가이익 같은 영업 외 이익이 포함되었을 수 있어 PER이 실제보다 낮아 보일 수 있습니다. 그래서 "매력 구간"으로 판정하지 않습니다.`);
   if(a.spike)w.push(`최근 이익이 최근 회계연도보다 ${((s.epsT/s.epsFY-1)*100).toFixed(0)}% 급증했습니다. 이익이 꺾이면 지금의 PER은 실제보다 싸 보이는 것일 수 있습니다.`);
   if(a.highPE)w.push(`PER ${s.pe}은 절대 수준이 높습니다. 이 앱은 회사의 과거와 비교하므로, 과거보다 낮아도 싸다는 뜻은 아닙니다.`);
+  if(a.priceOnly)w.push(s.loss?`최근 12개월 주당순이익이 $${s.epsT}로 적자입니다. PER로 평가할 수 없어 가격 위치만 봤고, "매력 구간"으로 판정하지 않습니다. 적자 기업은 가격이 낮아도 싸다고 볼 수 없습니다.`:`비교할 과거 PER이 부족해 가격 위치만 봤고, "매력 구간"으로 판정하지 않습니다.`);
   if(a.highYield)w.push(`최근 1년 분배율이 ${s.yld}%입니다. 이런 ETF는 분배금을 지급한 만큼 가격이 내려가므로, 가격만으로 싸다고 볼 수 없습니다. 이 앱은 분배금을 포함한 총수익을 계산하지 않습니다.`);
   return w;
 }
@@ -213,6 +221,7 @@ function summary(s,a){
   const place=a.gap>=10?`최근 약 10개월 평균 가격보다 ${money(s.price-s.ma200)} 비싸게 거래되고 있습니다`:a.gap>=-.5&&a.gap<=.5?`최근 약 10개월 평균 가격과 거의 같습니다`:a.gap>0?`최근 약 10개월 평균 가격보다 ${money(s.price-s.ma200)} 높습니다`:`최근 약 10개월 평균 가격보다 ${money(s.ma200-s.price)} 낮습니다`;
   const yr=`최근 1년 최저가 ${money(s.lo)}, 최고가 ${money(s.hi)} 사이에서 아래부터 ${a.pos.toFixed(0)}% 올라온 자리입니다.`;
   const anchor=a.peAnchor<a.maAnchor?'과거 평균 수준의 평가까지 내려온 가장 보수적인 기준입니다':'200일선 근처까지 내려와 가격 부담이 크게 줄어드는 기준입니다';
+  if(a.priceOnly&&a.v!=='risk')return `${who} 지금 ${place}. ${yr} ${s.loss?'최근 12개월이 적자여서':'비교할 과거 PER이 부족해'} 실적 대비 가격은 판단하지 못하고 가격 위치와 체력 점검(${a.health}/6)만 봤습니다. ${money(a.interest)} 부근은 200일선에 가까워지는 기준일 뿐, 싸다는 뜻은 아닙니다.`;
   if(a.etf){const near=flips(s).neutral;return `${who} 지금 ${place}. ${yr} ETF는 재무 공시가 없어 가격 위치만으로 판정했습니다. 그래서 많이 올랐는지는 알 수 있지만, 담고 있는 기업들이 실적에 비해 비싼지는 알 수 없습니다.${a.highYield?` 최근 1년 분배율이 ${s.yld}%로 높아, 가격이 낮은 것이 분배금을 많이 지급한 결과일 수 있습니다. 그래서 "매력 구간"으로 판정하지 않습니다.`:''}${a.v==='wait'&&near?` 규칙상 약 ${money(near)} 아래로 내려오면 판정이 "보통"으로 바뀝니다.`:''}${s.price<=a.interest?` 현재가는 이미 관심 가격 ${money(a.interest)} 아래에 있습니다.`:''}`}
   if(a.v==='wait'){
     const near=flips(s).neutral;
@@ -225,17 +234,17 @@ function summary(s,a){
 }
 function explainEtf(s,a){
   const f=flips(s),row=(n,v,sc,w)=>`<tr><td>${n}</td><td class="num">${v}</td><td class="num">${sc.toFixed(1)}</td><td class="num">${w}%</td><td class="num">${(sc*w/100).toFixed(1)}</td></tr>`;
-  return `<div><h3>ETF는 어떻게 판정하나요</h3><p>ETF는 회사가 아니라 여러 자산을 담은 펀드여서 SEC 재무 공시로 PER이나 체력을 계산하지 않습니다. 이 앱은 가격 위치만 봅니다. "기다리기"는 ETF가 나쁘다는 뜻이 아니라 최근 가격이 높다는 뜻입니다.</p></div>
+  return `${a.priceOnly?`<div><h3>왜 가격만 보나요</h3><p>${s.loss?'최근 12개월이 적자여서 PER을 계산할 수 없습니다':'비교할 과거 PER이 부족합니다'}. 그래서 실적 대비 평가 없이 가격 위치와 체력 점검만 봅니다. 체력 점검 ${a.health}/6: ${a.checks.map(c=>`${c[1]?'✓':'✕'} ${c[0]} (${c[2]})`).join(', ')}.</p></div>`:`<div><h3>ETF는 어떻게 판정하나요</h3><p>ETF는 회사가 아니라 여러 자산을 담은 펀드여서 SEC 재무 공시로 PER이나 체력을 계산하지 않습니다. 이 앱은 가격 위치만 봅니다. "기다리기"는 ETF가 나쁘다는 뜻이 아니라 최근 가격이 높다는 뜻입니다.</p></div>`}
   <div><h3>200일선: 최근 약 10개월의 평균 가격</h3><p>200일선은 ${money(s.ma200)}, 현재가는 ${money(s.price)}이고 차이는 ${sign(a.gap)}입니다.</p></div>
   <div><h3>52주 범위: 1년 중 어디쯤인가</h3><p>최저 ${money(s.lo)}, 최고 ${money(s.hi)} 사이의 ${a.pos.toFixed(0)}% 지점입니다. 최고가까지 ${sign(pctTo(s,s.hi))}, 최저가까지 ${sign(pctTo(s,s.lo))} 거리입니다.</p></div>
   <div><h3>RSI: 최근 사는 힘과 파는 힘</h3><p>현재 ${s.rsi}입니다. 보통 70 이상을 단기 과열, 30 이하를 단기 과매도로 봅니다.</p></div>
   <div><h3>가격 점수 ${a.priceScore.toFixed(1)}점과 판정</h3><div class="scroll"><table class="calc"><thead><tr><th>항목</th><th>현재값</th><th>점수</th><th>비중</th><th>반영</th></tr></thead><tbody>${row('200일선 괴리',sign(a.gap),a.gapS,50)}${row('52주 위치',a.pos.toFixed(0)+'%',a.posS,30)}${row('RSI',s.rsi,a.rsiS,20)}</tbody><tfoot><tr><td colspan="4">가격 점수</td><td class="num">${a.priceScore.toFixed(1)}</td></tr></tfoot></table></div><p>65 이상은 매력 구간, 35 이상은 보통, 그 아래는 기다리기입니다. 200일선보다 25% 이상 높으면 기다리기입니다.</p></div>
-  <div><h3>관심 가격과 과열 가격</h3><p>관심 가격 ${money(a.interest)}는 200일선 +5%, 과열 가격 ${money(a.over)}는 200일선 +25%입니다. 현재가 대비 각각 ${sign(pctTo(s,a.interest))}, ${sign(pctTo(s,a.over))}입니다.</p></div>
+  <div><h3>관심 가격과 과열 가격</h3><p>${a.interest?`관심 가격 ${money(a.interest)}는 200일선 +5%이고 현재가 대비 ${sign(pctTo(s,a.interest))}입니다. `:'체력이 약해 관심 가격을 제시하지 않습니다. '}과열 가격 ${money(a.over)}는 200일선 +25%이고 현재가 대비 ${sign(pctTo(s,a.over))}입니다.</p></div>
   <div><h3>판정이 바뀌는 가격</h3><ul>${['good','neutral','wait'].filter(k=>f[k]).map(k=>`<li>약 <b class="num">${money(f[k])}</b>: "${LABEL[k]}"로 바뀌는 가장 가까운 가격 (현재가 대비 ${sign(pctTo(s,f[k]))})</li>`).join('')}</ul><p>200일선, 52주 범위, RSI가 그대로라고 가정한 값입니다.</p></div>
-  <div><h3>이 판정을 믿으면 안 되는 경우</h3><ul>${warnings(s,a).map(w=>`<li>${w}</li>`).join('')}<li>지수 ETF는 장기적으로 오르는 경우가 많아, 상승장에서는 "기다리기"가 오래 이어져 매수 기회를 놓칠 수 있습니다. 이 기준은 아직 과거 데이터로 검증하지 않았습니다.</li><li>실적 대비 가격은 보지 않으므로, 가격이 낮아도 싸다고 단정할 수 없습니다.</li><li>레버리지·인버스 ETF는 장기 보유용 설계가 아닌 경우가 많고, 이 규칙이 잘 맞지 않을 수 있습니다.</li></ul></div>`;
+  <div><h3>이 판정을 믿으면 안 되는 경우</h3><ul>${warnings(s,a).map(w=>`<li>${w}</li>`).join('')}${a.etf?`<li>지수 ETF는 장기적으로 오르는 경우가 많아, 상승장에서는 "기다리기"가 오래 이어져 매수 기회를 놓칠 수 있습니다.</li><li>레버리지·인버스 ETF는 장기 보유용 설계가 아닌 경우가 많고, 이 규칙이 잘 맞지 않을 수 있습니다.</li>`:''}<li>이 기준은 아직 과거 데이터로 검증하지 않았습니다.</li><li>실적 대비 가격은 보지 않으므로, 가격이 낮아도 싸다고 단정할 수 없습니다.</li></ul></div>`;
 }
 function explain(s,a){
-  if(a.etf)return explainEtf(s,a);
+  if(a.noVal)return explainEtf(s,a);
   const eps=s.price/s.pe, medPE=a.medPE, peMin=Math.min(...ok(s.peH)), peMax=Math.max(...ok(s.peH)), f=flips(s), N=a.n;
   const gapRead=a.gap>=25?'과열로 보는 구간입니다.':a.gap>=10?'평균보다 꽤 위에 있어 단기간에 많이 오른 상태입니다. 상승 추세라는 좋은 신호이기도 하지만, 새로 사는 사람에게는 부담입니다.':a.gap>=0?'평균 가격 근처라 과열 부담이 작습니다.':a.gap>-10?'평균보다 조금 낮습니다. 부담은 적지만 하락 흐름인지 함께 봐야 합니다.':'평균보다 크게 낮습니다. 싸 보이지만 좋은 일이 있어서 떨어진 것은 아니므로 이유를 먼저 확인해야 합니다.';
   const posRead=a.pos>=80?'1년 중 비싼 쪽 끝에 가깝습니다.':a.pos>=40?'1년 범위의 중간쯤입니다.':'1년 범위의 낮은 쪽입니다.';
@@ -313,7 +322,7 @@ function render(t){
   $('v').innerHTML=`<div><p class="name">${s.ko} · ${s.en} · ${s.t} · ${s.asof} 기준</p><p class="call">${LABEL[a.v]}</p>${mode==='old'?`<p class="say">${sentence(s,a)}</p>`:''}${warnings(s,a).map(w=>`<p class="warn">주의: ${w}</p>`).join('')}</div>
   <div class="meters">
    <div><div class="meter-top"><span>가격 부담이 적은 정도</span><b class="num">${a.priceScore.toFixed(0)}/100</b></div><div class="bar"><i style="width:${a.priceScore}%"></i></div></div>
-   ${a.etf?`<p class="hint" style="margin:0">ETF는 가격 위치만으로 판정합니다. 실적 대비 평가와 기업 체력은 보지 않습니다.</p>`:`<div><div class="meter-top"><span>과거 대비 저렴한 정도</span><b class="num">${a.valScore.toFixed(0)}/100</b></div><div class="bar"><i style="width:${a.valScore}%"></i></div></div>
+   ${a.etf?`<p class="hint" style="margin:0">ETF는 가격 위치만으로 판정합니다. 실적 대비 평가와 기업 체력은 보지 않습니다.</p>`:a.priceOnly?`<div><div class="meter-top"><span>기업 체력 통과</span><b class="num">${a.health}/6</b></div><div class="segs">${[0,1,2,3,4,5].map(i=>`<i class="${i<a.health?'on':''}"></i>`).join('')}</div></div>`:`<div><div class="meter-top"><span>과거 대비 저렴한 정도</span><b class="num">${a.valScore.toFixed(0)}/100</b></div><div class="bar"><i style="width:${a.valScore}%"></i></div></div>
    <div><div class="meter-top"><span>기업 체력 통과</span><b class="num">${a.health}/6</b></div><div class="segs">${[0,1,2,3,4,5].map(i=>`<i class="${i<a.health?'on':''}"></i>`).join('')}</div></div>`}
   </div>`;
   const lo=Math.min(s.lo,a.interest??s.lo,s.ma200)*.97, hi=Math.max(s.hi,a.over)*1.03, P=x=>(x-lo)/(hi-lo)*100;
@@ -333,6 +342,8 @@ function render(t){
   </dl>`;
   $('fund').hidden=!!a.etf;
   if(a.etf){$('cmp').querySelectorAll('tbody tr').forEach(r=>r.classList.toggle('sel',r.dataset.t===t));return}
+  $('val').parentElement.hidden=!!a.priceOnly;
+  if(a.priceOnly){$('health').innerHTML=a.checks.map(c=>`<li><span class="${c[1]?'ok':'no'}" aria-label="${c[1]?'통과':'미통과'}">${c[1]?'✓':'✕'}</span><span>${c[0]}</span><span class="num hint">${c[2]}</span></li>`).join('');$('cmp').querySelectorAll('tbody tr').forEach(r=>r.classList.toggle('sel',r.dataset.t===t));return}
   const pips=n=>`<div class="pips" aria-hidden="true">${Array.from({length:a.n},(_,i)=>`<i class="${i<n?'on':''}"></i>`).join('')}</div>`;
   $('val').innerHTML=`<div class="two" style="gap:10px"><div class="vrow">${pips(a.peAbove)}PER: ${a.n}개 연도 중 <b>${a.peAbove}개</b>보다 낮음</div><div class="vrow">${pips(a.fcfBelow)}FCF 수익률: ${a.n}개 연도 중 <b>${a.fcfBelow}개</b>보다 높음</div></div>
   <div class="scroll"><table class="num"><thead><tr><th></th><th class="cur">현재</th>${s.fy.slice().reverse().map(f=>`<th>${f}</th>`).join('')}</tr></thead><tbody>

@@ -90,12 +90,15 @@ class Tests(unittest.TestCase):
         cf = {"facts": {"us-gaap": {"NetIncomeLoss": {"units": {"USD": [flow("2024-01-01", "2024-12-31", 1, "2025-02-01"), flow("2024-01-01", "2024-12-31", 2, "2026-02-01")]}}}}}
         self.assertEqual(ttm(facts(cf, ["NetIncomeLoss"]), date(2024, 12, 31)), 2)
 
-    def test_loss_is_reported_not_crashed(self):
+    def test_loss_company_falls_back_to_price_only(self):
         c = company()
         for row in c["facts"]["us-gaap"]["EarningsPerShareDiluted"]["units"]["USD/shares"]:
             row["val"] = -abs(row["val"])
-        with self.assertRaises(DataError):
-            compute("X", "", "Example", prices(), c)
+        s = compute("X", "", "Example", prices(), c)
+        self.assertTrue(s["priceOnly"] and s["loss"])
+        self.assertIsNone(s["pe"])
+        self.assertEqual(s["ma200"], 300)
+        self.assertLess(s["epsT"], 0)
 
     def test_rsi_extremes(self):
         self.assertEqual(rsi14(list(range(1, 40))), 100.0)
