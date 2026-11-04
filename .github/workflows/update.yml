@@ -16,13 +16,13 @@ concurrency:
 
 jobs:
   update:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
@@ -38,9 +38,13 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp docs/data.enc.json "$RUNNER_TEMP/data.enc.json"
+          git fetch --depth 1 origin main
+          git checkout -f -B main FETCH_HEAD
+          cp "$RUNNER_TEMP/data.enc.json" docs/data.enc.json
           git add docs/data.enc.json
           git diff --cached --quiet || git commit -m "데이터 갱신"
-          git push
+          git push origin main
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
