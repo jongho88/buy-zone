@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>매수 구간 판독기</title>
+<style>:root{color-scheme:light}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* 레이아웃: 위에서 아래로 판정 → 가격 눈금자 → 근거 → 전체 비교. 측량 눈금자 같은 도구를 모티프로 삼는다. */
+:root{
+  --bg:#eef2f4;--surface:#fbfcfc;--sunken:#e2e8eb;--ink:#142229;--ink2:#47575f;--ink3:#67767e;--line:#ccd6db;
+  --accent:#1a4f8b;--accent-soft:#dce7f3;
+  --wait:#b02a1f;--wait-soft:#f8e3df;--neutral:#8a5c00;--neutral-soft:#f6ebce;--good:#0f7346;--good-soft:#d8f0e3;--risk:#6b3aa6;--risk-soft:#ebe2f7;
+  --sans:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;--mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#10181d;--surface:#172228;--sunken:#0c1317;--ink:#e8eff2;--ink2:#b0bfc6;--ink3:#90a0a8;--line:#2d3c44;
+  --accent:#8ab8ec;--accent-soft:#1d3144;
+  --wait:#f2938a;--wait-soft:#3d1f1c;--neutral:#e4b75a;--neutral-soft:#37290c;--good:#67d09d;--good-soft:#123326;--risk:#c3a2ee;--risk-soft:#2c2140;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#10181d;--surface:#172228;--sunken:#0c1317;--ink:#e8eff2;--ink2:#b0bfc6;--ink3:#90a0a8;--line:#2d3c44;
+  --accent:#8ab8ec;--accent-soft:#1d3144;
+  --wait:#f2938a;--wait-soft:#3d1f1c;--neutral:#e4b75a;--neutral-soft:#37290c;--good:#67d09d;--good-soft:#123326;--risk:#c3a2ee;--risk-soft:#2c2140;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 var(--sans);word-break:keep-all;overflow-wrap:anywhere}
+.wrap{max-width:980px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 56px;display:grid;gap:18px}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+header{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline;justify-content:space-between}
+h1{font-size:20px;line-height:1.3;margin:0;font-weight:700;text-wrap:balance}
+.snap{font-size:13px;color:var(--ink2)}
+form{display:flex;gap:8px}
+input{flex:1;min-width:0;font:inherit;font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink)}
+button{font:inherit;cursor:pointer;color:var(--ink)}
+.go{padding:10px 18px;border:0;border-radius:6px;background:var(--accent);color:var(--surface);font-weight:700}
+input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{padding:4px 10px;border:1px solid var(--line);border-radius:5px;background:transparent;font-size:13px}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.miss{margin:8px 0 0;font-size:14px;color:var(--wait)}
+.verdict{--c:var(--neutral);--s:var(--neutral-soft);background:var(--s);padding:22px 24px;border-radius:8px;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:20px 32px}
+.verdict.wait{--c:var(--wait);--s:var(--wait-soft)}.verdict.good{--c:var(--good);--s:var(--good-soft)}.verdict.risk{--c:var(--risk);--s:var(--risk-soft)}
+.name{font-size:14px;color:var(--ink2);margin:0}
+.call{font-size:clamp(34px,7vw,52px);line-height:1.15;font-weight:700;color:var(--c);margin:2px 0 10px;letter-spacing:-.02em}
+.say{margin:0;max-width:34em}
+.warn{margin:10px 0 0;font-size:14px;color:var(--ink2)}
+.meters{display:grid;gap:12px;align-content:start}
+.meter-top{display:flex;justify-content:space-between;gap:8px;font-size:13px}
+.bar{height:8px;background:var(--surface);border-radius:4px;overflow:hidden;margin-top:3px}
+.bar i{display:block;height:100%;background:var(--c);border-radius:4px}
+.segs{display:grid;grid-template-columns:repeat(6,1fr);gap:2px;margin-top:3px}
+.segs i{height:8px;background:var(--surface);border-radius:2px}.segs i.on{background:var(--c)}
+.hint{font-size:12px;color:var(--ink2)}
+section{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:18px 20px;min-width:0}
+h2{font-size:15px;margin:0 0 12px;font-weight:700}
+.ruler{position:relative;height:104px;margin:0 2px}
+.track{position:absolute;left:0;right:0;top:44px;height:18px;background:var(--sunken);border-radius:3px;overflow:hidden}
+.zone{position:absolute;top:0;bottom:0}.zone.lo{left:0;background:var(--good);opacity:.4}.zone.hi{right:0;background:var(--wait);opacity:.4}
+.range{position:absolute;top:44px;height:18px;border-left:2px solid var(--ink2);border-right:2px solid var(--ink2)}
+.pin{position:absolute;top:18px;width:0;height:50px;border-left:3px solid var(--ink)}
+.tag{position:absolute;white-space:nowrap;font-size:13px}
+.tag.now{top:-4px;font-weight:700}.tag.ma{top:74px;color:var(--ink2)}
+.tick{position:absolute;top:40px;height:26px;border-left:2px dashed var(--accent)}
+.keys{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px 18px;margin:10px 0 0;padding:0}
+.keys div{min-width:0}.keys dt{font-size:12px;color:var(--ink2)}.keys dd{margin:0;font-weight:600}
+.keys small{display:block;font:400 12px var(--sans);color:var(--ink2)}
+.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.pips{display:flex;gap:4px;align-items:center;margin:2px 0 4px}
+.pips i{width:12px;height:12px;border-radius:50%;border:2px solid var(--accent)}.pips i.on{background:var(--accent)}
+.vrow{margin-bottom:12px;font-size:14px}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:7px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-weight:500;color:var(--ink2)}th:first-child,td:first-child{text-align:left}
+tbody tr:last-child td{border-bottom:0}.cur{background:var(--accent-soft);font-weight:600}
+.checks{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+.checks li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:6px;font-size:14px;align-items:baseline}
+.ok{color:var(--good);font-weight:700}.no{color:var(--wait);font-weight:700}
+.rowbtn{background:none;border:0;padding:0;font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.vtag{font-weight:700}.vtag.wait{color:var(--wait)}.vtag.neutral{color:var(--neutral)}.vtag.good{color:var(--good)}.vtag.risk{color:var(--risk)}
+tr.sel td{background:var(--accent-soft)}
+.notes{font-size:14px;color:var(--ink2);display:grid;gap:8px}.notes p{margin:0}.notes ul{margin:0;padding-left:18px}
+a{color:var(--accent)}
+.lock{max-width:420px;margin:12vh auto 0;padding-inline:max(16px,env(safe-area-inset-left,0px)) max(16px,env(safe-area-inset-right,0px));display:grid;gap:12px}
+.lock h1{font-size:24px}.lock p{margin:0;color:var(--ink2)}.lock label{font-size:14px;display:flex;gap:6px;align-items:center}.lock label input{flex:none;width:auto}
+.seg{display:flex;gap:0;justify-self:start}
+.seg button{padding:7px 14px;border:1px solid var(--line);background:var(--surface);font-size:14px}
+.seg button:first-child{border-radius:6px 0 0 6px}.seg button:last-child{border-radius:0 6px 6px 0;border-left:0}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:700}
+.pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.6fr);gap:14px}
+.pair>div{padding:14px 16px;border-radius:6px;min-width:0}
+.pair .old{background:var(--sunken)}.pair .new{background:var(--accent-soft)}
+.pair h3{font-size:13px;margin:0 0 6px;color:var(--ink2);font-weight:500}.pair p{margin:0 0 8px}.pair p:last-child{margin:0}
+.long{display:grid;gap:26px;max-width:46em}
+.long h3{font-size:16px;margin:0 0 8px;line-height:1.4;text-wrap:balance}
+.long p{margin:0 0 10px}.long p:last-child{margin-bottom:0}
+.long ul{margin:0 0 10px;padding-left:20px;display:grid;gap:7px}
+.long .calc{margin:10px 0;font-size:13px}
+.long .calc td,.long .calc th{white-space:normal}
+.long tfoot td{font-weight:700;border-bottom:0;border-top:2px solid var(--ink2)}
+.long b{font-weight:700}
+@media (max-width:720px){.pair{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:720px){.verdict,.two{grid-template-columns:minmax(0,1fr)}.verdict{padding:18px}section{padding:16px}}
+</style>
+
+<div class="lock" id="lock">
+  <h1>매수 구간 판독기</h1>
+  <p id="lockMsg">비밀번호를 입력하면 판독 결과가 열립니다.</p>
+  <form id="lf"><input id="pw" type="password" aria-label="비밀번호" placeholder="비밀번호" autocomplete="current-password"><button class="go">열기</button></form>
+  <label><input id="keep" type="checkbox"> 내 기기에서 비밀번호 기억하기</label>
+</div>
+<div class="wrap" id="app" hidden>
+  <header>
+    <h1>매수 구간 판독기</h1>
+    <span class="snap" id="snap"></span>
+  </header>
+  <div>
+    <form id="f"><input id="q" aria-label="종목 이름 또는 티커" placeholder="관심 종목에서 찾기" autocomplete="off"><button class="go">판독</button></form>
+    <div class="chips" id="chips"></div>
+    <p class="miss" id="miss" hidden></p>
+  </div>
+  <div class="seg" role="group" aria-label="설명 방식">
+    <button type="button" id="mLong" aria-pressed="true">풀어서 보기</button>
+    <button type="button" id="mOld" aria-pressed="false">간단히 보기</button>
+  </div>
+  <div class="verdict" id="v"></div>
+  <section id="compare"><h2>요약</h2><div class="pair" id="pair"></div></section>
+  <section><h2>지금 가격은 어디쯤인가</h2><div id="ruler"></div></section>
+  <div class="two" id="fund">
+    <section><h2>실적에 비해 비싼가</h2><div id="val"></div></section>
+    <section><h2>싼 데 이유가 있나</h2><ul class="checks" id="health"></ul></section>
+  </div>
+  <section id="explain"><h2>처음부터 끝까지 풀어서 설명</h2><div class="long" id="long"></div></section>
+  <section><h2>관심 종목 한눈에 비교</h2><div class="scroll"><table id="cmp"></table></div><p class="miss" id="errs" hidden></p></section>
+  <section class="notes">
+    <h2 style="color:var(--ink)">판정 규칙과 데이터</h2>
+    <ul>
+      <li><b>가격 점수:</b> 200일선 괴리율 50%, 52주 범위 위치 30%, RSI 20%. 점수가 높을수록 부담이 적습니다.</li>
+      <li><b>밸류 점수:</b> 현재 PER 60%, 잉여현금흐름(FCF) 수익률 40%. 최근 회계연도 말(최대 5개)과 비교합니다.</li>
+      <li><b>판정:</b> 두 점수의 평균이 65 이상이면 매력 구간, 35 이상이면 보통, 그 아래면 기다리기입니다. 200일선보다 25% 이상 높으면 기다리기입니다. 체력 점검을 3개 이하만 통과하면 평균이 50 이상일 때 싸지만 위험, 그 아래면 기다리기입니다.</li>
+      <li><b>ETF:</b> 재무 공시가 없어 가격 점수만으로 같은 기준을 적용하고, 관심 가격은 200일선 +5%입니다.</li>
+      <li><b>관심 가격:</b> 200일선 +5%와 "현재 주당순이익 × 5년 중앙 PER" 중 낮은 값입니다. <b>과열 가격:</b> 200일선 +25%입니다.</li>
+    </ul>
+    <p>이 기준은 아직 과거 데이터로 검증하지 않은 초기값입니다. 가격은 장 마감 뒤 하루 한 번 갱신하는 종가 기준이고, 실적은 SEC에 제출된 최신 공시까지만 반영합니다. 금융주, ETF, 해외 기업, 적자 기업은 판독하지 못할 수 있습니다.</p>
+    <p>이 판정은 공개 지표를 규칙으로 계산한 참고 자료이며 투자 자문이 아닙니다.</p>
+    <p>출처: 시세 <a href="https://www.tiingo.com/">Tiingo</a>, 재무 <a href="https://www.sec.gov/edgar/sec-api-documentation">SEC EDGAR</a>. Tiingo 무료 데이터는 개인 사용 조건이므로 이 페이지와 비밀번호를 다른 사람과 공유하지 마세요.</p>
+  </section>
+</div>
+
+<script>
+let STOCKS=[],GENERATED="",ERRORS=[];
+const clamp=(x,a=0,b=100)=>Math.min(b,Math.max(a,x));
+const ok=a=>a.filter(x=>x!=null);
+const median=a=>{const v=ok(a).sort((x,y)=>x-y);return v[Math.floor(v.length/2)]};
+const esc=x=>String(x).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function analyze(s){
+  const gap=(s.price/s.ma200-1)*100, pos=(s.price-s.lo)/(s.hi-s.lo)*100;
+  const gapS=clamp((25-gap)/35*100), posS=clamp(100-pos), rsiS=clamp((70-s.rsi)/40*100);
+  const priceScore=.5*gapS+.3*posS+.2*rsiS;
+  if(s.etf){const v=gap>=25?'wait':priceScore>=65?'good':priceScore>=35?'neutral':'wait',m=s.ma200*1.05;return {etf:true,n:0,gapS,posS,rsiS,peAnchor:m,maAnchor:m,gap,pos,priceScore,valScore:null,peAbove:0,fcfBelow:0,checks:[],health:null,avg:priceScore,v,medPE:null,interest:m,basis:'200일선 +5%',over:s.ma200*1.25,spike:false}}
+  const n=ok(s.peH).length, peAbove=ok(s.peH).filter(x=>x>s.pe).length, fcfBelow=ok(s.fcfH).filter(x=>x<s.fcfy).length;
+  const valScore=.6*peAbove/n*100+.4*fcfBelow/n*100;
+  const checks=[
+   ['매출이 늘고 있다',s.rev>0,`${s.rev>0?'+':''}${s.rev}%`],
+   [`주당순이익이 ${s.y2}보다 높다`,s.epsT>s.eps2,`$${s.epsT} / $${s.eps2}`],
+   [`FCF가 ${s.y2}보다 많다`,s.fcfT>s.fcf2,`$${(s.fcfT/1000).toFixed(1)}B / $${(s.fcf2/1000).toFixed(1)}B`],
+   ['ROE 15% 이상',s.roe!=null&&s.roe>=15,s.roe==null?'자료 없음':`${s.roe}%`],
+   ['부채비율(D/E) 1.5 이하',s.de!=null&&s.de<=1.5,s.de==null?'자료 없음':`${s.de}`],
+   ['최근 12개월 이익이 1년 전보다 높다',s.epsT>s.epsAgo,`$${s.epsT} / $${s.epsAgo}`]
+  ];
+  const health=checks.filter(c=>c[1]).length, avg=(priceScore+valScore)/2;
+  let v;
+  if(health<=3) v=avg>=50?'risk':'wait';
+  else if(gap>=25) v='wait';
+  else v=avg>=65?'good':avg>=35?'neutral':'wait';
+  const medPE=median(s.peH), peAnchor=s.price/s.pe*medPE, maAnchor=s.ma200*1.05;
+  const interest=v==='risk'?null:Math.min(maAnchor,peAnchor);
+  return {n,gapS,posS,rsiS,peAnchor,maAnchor,gap,pos,priceScore,valScore,peAbove,fcfBelow,checks,health,avg,v,medPE,interest,basis:peAnchor<maAnchor?`현재 주당순이익 × 5년 중앙 PER ${medPE}`:'200일선 +5%',over:s.ma200*1.25,spike:s.epsT>=s.epsFY*1.3};
+}
+const LABEL={wait:'기다리기',neutral:'보통',good:'매력 구간',risk:'싸지만 위험'};
+const money=x=>'$'+x.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const sign=x=>(x>=0?'+':'')+x.toFixed(1)+'%';
+const pctTo=(s,p)=>((p/s.price-1)*100);
+function sentence(s,a){
+  const where=`현재 ${money(s.price)}로 ${Math.abs(a.gap)<.5?'200일선과 거의 같은 위치이고':'200일선보다 '+Math.abs(a.gap).toFixed(1)+'% '+(a.gap>0?'높고':'낮고')}, 52주 범위의 ${a.pos.toFixed(0)}% 지점입니다.`;
+  if(a.v==='risk') return `${where} 가격은 낮지만 체력 점검 ${a.health}/6입니다. 실적이 회복되는지 확인하기 전까지는 관심 가격을 제시하지 않습니다.`;
+  if(a.v==='wait') return `${where} 신규 매수는 ${money(a.interest)} 부근까지 기다리는 쪽이 고점 부담을 줄입니다.`;
+  if(a.v==='good') return `${where} 과거 대비 부담이 낮은 구간이라, 한 번에 사기보다 나눠서 사기 시작할 만합니다.`;
+  return `${where} 비싸지도 싸지도 않은 구간이라, 사더라도 나눠서 사고 ${money(a.interest)} 부근에서 더 담는 방식이 맞습니다.`;
+}
+function flips(s){
+  const base=analyze(s).v,out={};
+  for(let f=.4;f<=1.6;f+=.0025){
+    const c={...s,price:s.price*f,pe:s.pe*f,fcfy:s.fcfy/f},v=analyze(c).v;
+    if(v!==base&&(!out[v]||Math.abs(c.price-s.price)<Math.abs(out[v]-s.price)))out[v]=c.price;
+  }
+  return out;
+}
+const topic=w=>{const c=w.charCodeAt(w.length-1)-44032;return w+(c>=0&&c%28?'은':'는')};
+function summary(s,a){
+  const toHi=s.hi-s.price, who=topic(s.ko);
+  const place=a.gap>=10?`최근 약 10개월 평균 가격보다 ${money(s.price-s.ma200)} 비싸게 거래되고 있습니다`:a.gap>=-.5&&a.gap<=.5?`최근 약 10개월 평균 가격과 거의 같습니다`:a.gap>0?`최근 약 10개월 평균 가격보다 ${money(s.price-s.ma200)} 높습니다`:`최근 약 10개월 평균 가격보다 ${money(s.ma200-s.price)} 낮습니다`;
+  const yr=`최근 1년 최저가 ${money(s.lo)}, 최고가 ${money(s.hi)} 사이에서 아래부터 ${a.pos.toFixed(0)}% 올라온 자리입니다.`;
+  const anchor=a.peAnchor<a.maAnchor?'과거 평균 수준의 평가까지 내려온 가장 보수적인 기준입니다':'200일선 근처까지 내려와 가격 부담이 크게 줄어드는 기준입니다';
+  if(a.etf){const near=flips(s).neutral;return `${who} 지금 ${place}. ${yr} ETF는 재무 공시가 없어 가격 위치만으로 판정했습니다. 그래서 많이 올랐는지는 알 수 있지만, 담고 있는 기업들이 실적에 비해 비싼지는 알 수 없습니다.${a.v==='wait'&&near?` 규칙상 약 ${money(near)} 아래로 내려오면 판정이 "보통"으로 바뀝니다.`:''}`}
+  if(a.v==='wait'){
+    const near=flips(s).neutral;
+    return `${who} 지금 ${place}. ${yr} 최고가까지 ${money(toHi)} 남았으니 고점 근처에서 사는 셈입니다. 회사 체력은 6개 중 ${a.health}개를 통과해${a.health>=5?' 좋은 편이지만':' 무난하지만'} 가격이 부담스럽습니다. 규칙상 ${near?`약 ${money(near)} 아래로 내려오면 판정이 "보통"으로 바뀌고`:'가격이 내려오면 판정이 완화되고'}, ${money(a.interest)} 부근은 ${anchor}.`;
+  }
+  if(a.v==='risk') return `${who} 지금 ${place}. ${yr} 숫자만 보면 싸지만 체력 점검 6개 중 ${a.health}개만 통과했습니다. 실적이 나빠져서 싸진 것일 수 있으므로, 앱은 가격 기준을 제시하지 않고 실적 회복부터 확인하라고 안내합니다.`;
+  if(a.v==='good') return `${who} 지금 ${place}. ${yr} 실적에 비해서도 과거보다 부담이 낮고 체력 점검도 6개 중 ${a.health}개를 통과했습니다. 그래서 규칙상 분할 매수를 시작할 만한 구간으로 봅니다. 다만 더 떨어지지 않는다는 뜻은 아닙니다.`;
+  return `${who} 지금 ${place}. ${yr} 가격은 다소 부담스럽지만 실적에 비한 평가는 과거보다 낮은 편이라, 두 신호를 합치면 중간입니다. 한 번에 사기보다 나눠 사는 방식이 어울리는 구간이고, ${money(a.interest)} 부근은 추가 매수를 검토할 자리입니다.`;
+}
+function explainEtf(s,a){
+  const f=flips(s),row=(n,v,sc,w)=>`<tr><td>${n}</td><td class="num">${v}</td><td class="num">${sc.toFixed(1)}</td><td class="num">${w}%</td><td class="num">${(sc*w/100).toFixed(1)}</td></tr>`;
+  return `<div><h3>ETF는 어떻게 판정하나요</h3><p>ETF는 회사가 아니라 여러 자산을 담은 펀드여서 SEC 재무 공시로 PER이나 체력을 계산하지 않습니다. 이 앱은 가격 위치만 봅니다. "기다리기"는 ETF가 나쁘다는 뜻이 아니라 최근 가격이 높다는 뜻입니다.</p></div>
+  <div><h3>200일선: 최근 약 10개월의 평균 가격</h3><p>200일선은 ${money(s.ma200)}, 현재가는 ${money(s.price)}이고 차이는 ${sign(a.gap)}입니다.</p></div>
+  <div><h3>52주 범위: 1년 중 어디쯤인가</h3><p>최저 ${money(s.lo)}, 최고 ${money(s.hi)} 사이의 ${a.pos.toFixed(0)}% 지점입니다. 최고가까지 ${sign(pctTo(s,s.hi))}, 최저가까지 ${sign(pctTo(s,s.lo))} 거리입니다.</p></div>
+  <div><h3>RSI: 최근 사는 힘과 파는 힘</h3><p>현재 ${s.rsi}입니다. 보통 70 이상을 단기 과열, 30 이하를 단기 과매도로 봅니다.</p></div>
+  <div><h3>가격 점수 ${a.priceScore.toFixed(1)}점과 판정</h3><div class="scroll"><table class="calc"><thead><tr><th>항목</th><th>현재값</th><th>점수</th><th>비중</th><th>반영</th></tr></thead><tbody>${row('200일선 괴리',sign(a.gap),a.gapS,50)}${row('52주 위치',a.pos.toFixed(0)+'%',a.posS,30)}${row('RSI',s.rsi,a.rsiS,20)}</tbody><tfoot><tr><td colspan="4">가격 점수</td><td class="num">${a.priceScore.toFixed(1)}</td></tr></tfoot></table></div><p>65 이상은 매력 구간, 35 이상은 보통, 그 아래는 기다리기입니다. 200일선보다 25% 이상 높으면 기다리기입니다.</p></div>
+  <div><h3>관심 가격과 과열 가격</h3><p>관심 가격 ${money(a.interest)}는 200일선 +5%, 과열 가격 ${money(a.over)}는 200일선 +25%입니다. 현재가 대비 각각 ${sign(pctTo(s,a.interest))}, ${sign(pctTo(s,a.over))}입니다.</p></div>
+  <div><h3>판정이 바뀌는 가격</h3><ul>${['good','neutral','wait'].filter(k=>f[k]).map(k=>`<li>약 <b class="num">${money(f[k])}</b>: "${LABEL[k]}"로 바뀌는 가장 가까운 가격 (현재가 대비 ${sign(pctTo(s,f[k]))})</li>`).join('')}</ul><p>200일선, 52주 범위, RSI가 그대로라고 가정한 값입니다.</p></div>
+  <div><h3>이 판정을 믿으면 안 되는 경우</h3><ul><li>지수 ETF는 장기적으로 오르는 경우가 많아, 상승장에서는 "기다리기"가 오래 이어져 매수 기회를 놓칠 수 있습니다. 이 기준은 아직 과거 데이터로 검증하지 않았습니다.</li><li>실적 대비 가격은 보지 않으므로, 가격이 낮아도 싸다고 단정할 수 없습니다.</li><li>레버리지·인버스 ETF는 장기 보유용 설계가 아닌 경우가 많고, 이 규칙이 잘 맞지 않을 수 있습니다.</li></ul></div>`;
+}
+function explain(s,a){
+  if(a.etf)return explainEtf(s,a);
+  const eps=s.price/s.pe, medPE=a.medPE, peMin=Math.min(...ok(s.peH)), peMax=Math.max(...ok(s.peH)), f=flips(s), N=a.n;
+  const gapRead=a.gap>=25?'과열로 보는 구간입니다.':a.gap>=10?'평균보다 꽤 위에 있어 단기간에 많이 오른 상태입니다. 상승 추세라는 좋은 신호이기도 하지만, 새로 사는 사람에게는 부담입니다.':a.gap>=0?'평균 가격 근처라 과열 부담이 작습니다.':a.gap>-10?'평균보다 조금 낮습니다. 부담은 적지만 하락 흐름인지 함께 봐야 합니다.':'평균보다 크게 낮습니다. 싸 보이지만 좋은 일이 있어서 떨어진 것은 아니므로 이유를 먼저 확인해야 합니다.';
+  const posRead=a.pos>=80?'1년 중 비싼 쪽 끝에 가깝습니다.':a.pos>=40?'1년 범위의 중간쯤입니다.':'1년 범위의 낮은 쪽입니다.';
+  const rsiRead=s.rsi>=70?'단기 과열로 보는 구간입니다.':s.rsi<=30?'단기 과매도로 보는 구간입니다.':s.rsi>=50?'과열은 아니지만 최근 오르는 힘이 조금 더 강합니다.':s.rsi<=40?'30에 가까워, 최근 파는 힘이 강했습니다.':'과열도 과매도도 아닌 중립입니다.';
+  const peRead=a.peAbove===0?`과거 ${N}개 연도 어느 때보다 높습니다. 시장이 이 회사의 1달러 이익에 평소보다 비싼 값을 매기고 있다는 뜻입니다.`:a.peAbove===N?`과거 ${N}개 연도 어느 때보다 낮습니다.`:`과거 ${N}개 연도 중 ${a.peAbove}개 연도보다 낮습니다.`;
+  const row=(n,v,sc,w)=>`<tr><td>${n}</td><td class="num">${v}</td><td class="num">${sc.toFixed(1)}</td><td class="num">${w}%</td><td class="num">${(sc*w/100).toFixed(1)}</td></tr>`;
+  const conclude={
+   wait:`<p><b>${LABEL.wait}</b>는 지금 새로 사면 비싼 쪽에서 살 가능성이 크다는 뜻입니다. 회사가 나쁘다거나, 이미 가진 주식을 팔라는 뜻은 아닙니다. 가격이 더 오를 수도 있으므로 기다리는 데에도 놓칠 위험이 있습니다.</p>`,
+   neutral:`<p><b>${LABEL.neutral}</b>은 뚜렷이 비싸지도 싸지도 않다는 뜻입니다. 한 번에 다 사면 고점에 물릴 위험이 남아 있으니, 나눠서 사는 방식이 어울립니다.</p>`,
+   good:`<p><b>${LABEL.good}</b>은 가격과 실적 평가가 모두 과거보다 부담이 적다는 뜻입니다. 바닥이라는 뜻은 아니며, 더 떨어질 수 있으므로 나눠서 사는 방식이 어울립니다.</p>`,
+   risk:`<p><b>${LABEL.risk}</b>은 숫자는 싸 보이지만 실적이 함께 나빠지고 있다는 뜻입니다. 장기 투자에서는 싸게 샀는데 계속 떨어지는 경우가 고점 매수만큼 위험합니다.</p>`
+  }[a.v];
+  const whyChecks=[
+   `<b>매출 증가</b>: 회사의 판매액이 1년 전보다 ${s.rev>0?'늘었습니다':'줄었습니다'} (${s.rev>0?'+':''}${s.rev}%). 매출이 줄면 이익을 늘리기 어렵습니다.`,
+   `<b>주당순이익</b>: 주식 한 주가 번 이익이 ${s.y2}의 ${money(s.eps2)}에서 최근 12개월 ${money(s.epsT)}로 ${s.epsT>s.eps2?'늘었습니다':'줄었습니다'}. 장기적으로 주가를 끌어올리는 가장 중요한 힘입니다.`,
+   `<b>잉여현금흐름(FCF)</b>: 사업과 투자에 쓰고 실제로 남은 현금입니다. ${s.y2}의 $${(s.fcf2/1000).toFixed(1)}B에서 최근 12개월 $${(s.fcfT/1000).toFixed(1)}B로 ${s.fcfT>s.fcf2?'늘었습니다':'줄었습니다'}. 장부상 이익보다 속이기 어려운 숫자입니다.`,
+   `<b>ROE</b>: 주주 돈으로 1년에 얼마나 벌었는지 보여줍니다. 현재 ${s.roe==null?'자료를 찾지 못했고':s.roe+'%이고'}, 기준은 15% 이상입니다.${s.roe>=100?' 100%가 넘으면 자본이 작거나 이익이 급증했다는 뜻이기도 해서, 값 자체를 곧이곧대로 보지 않는 편이 좋습니다.':''}`,
+   `<b>부채비율</b>: 자본 1달러당 빚이 얼마인지 보여줍니다. 현재 ${s.de==null?'자료를 찾지 못했고':s.de+'달러이고'}, 기준은 1.5 이하입니다. 불황에 버티는 힘과 관련됩니다.`,
+   `<b>최근 이익 흐름</b>: 최근 12개월 주당순이익이 1년 전 ${money(s.epsAgo)}에서 ${money(s.epsT)}로 ${s.epsT>s.epsAgo?'늘었습니다. 이익이 지금도 자라고 있다는 뜻입니다':'줄었습니다. 이익이 꺾인 상태라 지금의 낮은 PER이 착시일 수 있습니다'}.`
+  ];
+  const flipTxt=a.v==='risk'
+   ?`<p>이 종목은 가격만으로 다른 판정이 되지 않습니다. 체력 점검을 4개 이상 통과해야 일반 판정으로 돌아갑니다. 지금 ${a.health}개를 통과했고, 위의 ✕ 항목 중 ${4-a.health}개 이상이 회복되어야 합니다.${f.wait?` 반대로 체력이 그대로인 채 약 ${money(f.wait)}까지 오르면 "${LABEL.wait}"로 바뀝니다.`:''}</p>`
+   :`<ul>${['good','neutral','wait'].filter(k=>f[k]).map(k=>`<li>약 <b class="num">${money(f[k])}</b>: "${LABEL[k]}"로 바뀌는 가장 가까운 가격 (현재가 대비 ${sign(pctTo(s,f[k]))})</li>`).join('')}</ul><p>이 가격은 실적, 200일선, 52주 범위, RSI가 지금 그대로라고 가정하고 주가만 움직여 계산했습니다. 실제로는 시간이 지나면 200일선과 실적도 변하므로 판정 가격도 함께 움직입니다.</p>`;
+  const interestTxt=a.v==='risk'
+   ?`<p>이 종목은 관심 가격을 제시하지 않습니다. 실적이 나빠지면 "과거 평균 PER"로 계산한 가격 자체가 믿을 만하지 않기 때문입니다. 참고로 두 기준값은 200일선 +5%인 ${money(a.maAnchor)}, 과거 평균 평가인 ${money(a.peAnchor)}이며, 둘 다 현재가보다 높아 "이미 싸다"는 착각을 주기 쉽습니다.</p>`
+   :`<p>관심 가격은 두 기준 중 <b>낮은 쪽</b>을 고릅니다. 고점에 물리지 않는 것이 목적이어서 일부러 보수적으로 잡았습니다.</p>
+   <ul><li><b>차트 기준 ${money(a.maAnchor)}</b>: 200일선 ${money(s.ma200)}에 5%를 더한 값입니다. 평균 가격 근처까지 내려왔다는 의미입니다. 현재가 대비 ${sign(pctTo(s,a.maAnchor))}입니다.</li>
+   <li><b>실적 기준 ${money(a.peAnchor)}</b>: 주당순이익 약 ${money(eps)} × 과거 ${N}개 연도 중간 PER ${medPE}입니다. 시장이 평소 수준의 값을 매긴다면 얼마인지 보여줍니다. 현재가 대비 ${sign(pctTo(s,a.peAnchor))}입니다.</li></ul>
+   ${a.interest>=s.price?`<p>지금 가격은 이미 관심 가격 ${money(a.interest)} 아래에 있습니다.</p>`:a.interest<s.lo?`<p><b>${money(a.interest)} 자체를 목표 가격으로 삼지는 마세요.</b> 최근 1년 최저가 ${money(s.lo)}보다도 낮아, 지난 1년 동안 없었던 가격입니다. 좋은 회사는 오랫동안 이 가격까지 내려오지 않을 수 있습니다. 그래서 "이 값이 올 때까지 사지 말라"가 아니라 "이 값이면 실적 기준으로도 부담이 거의 없다"는 뜻으로 읽어야 합니다. 그 위의 ${money(a.maAnchor)} 부근을 먼저 볼 지점으로 삼고 나눠서 사는 방법도 있습니다.</p>`:`<p>${money(a.interest)}까지 ${Math.abs(pctTo(s,a.interest)).toFixed(1)}% 내려와야 합니다. 이 가격이 오지 않고 주가가 오를 수도 있으므로, 절대적인 조건이 아니라 부담이 줄어드는 지점으로 읽어야 합니다.</p>`}`;
+  return `
+  <div><h3>결론부터</h3>${conclude}</div>
+  <div><h3>200일선: 최근 약 10개월의 평균 가격</h3>
+   <p>200일선은 최근 200거래일 종가의 평균입니다. 주식시장이 1년에 약 250일 열리므로 약 10개월 동안 투자자들이 평균적으로 산 가격대로 볼 수 있습니다.</p>
+   <p>${s.ko}의 200일선은 ${money(s.ma200)}이고 현재가는 ${money(s.price)}입니다. 차이는 ${money(Math.abs(s.price-s.ma200))}, 비율로는 ${sign(a.gap)}입니다. ${gapRead}</p></div>
+  <div><h3>52주 범위: 1년 중 어디쯤인가</h3>
+   <p>최근 1년 최저가는 ${money(s.lo)}, 최고가는 ${money(s.hi)}입니다. 최저를 0%, 최고를 100%로 놓으면 현재가는 ${a.pos.toFixed(0)}% 지점입니다. 계산식은 (${s.price} − ${s.lo}) ÷ (${s.hi} − ${s.lo})입니다.</p>
+   <p>최고가까지 ${money(s.hi-s.price)}(${sign(pctTo(s,s.hi))}), 최저가까지 ${money(s.price-s.lo)}(${sign(pctTo(s,s.lo))}) 거리입니다. ${posRead}</p></div>
+  <div><h3>RSI: 최근 사는 힘과 파는 힘</h3>
+   <p>RSI는 최근 오른 폭과 내린 폭을 비교해 0~100으로 나타냅니다. 보통 70 이상을 단기 과열, 30 이하를 단기 과매도로 봅니다. ${s.ko}의 RSI는 ${s.rsi}입니다. ${rsiRead} 단기 지표여서 비중을 20%만 두었습니다.</p></div>
+  <div><h3>가격 점수 ${a.priceScore.toFixed(1)}점은 이렇게 나왔습니다</h3>
+   <p>점수는 0~100이고 <b>높을수록 가격 부담이 적습니다</b>. 200일선 +25% 이상은 0점, −10% 이하는 100점입니다. 52주 위치는 낮을수록, RSI는 30에 가까울수록 점수가 높습니다.</p>
+   <div class="scroll"><table class="calc"><thead><tr><th>항목</th><th>현재값</th><th>점수</th><th>비중</th><th>반영</th></tr></thead><tbody>${row('200일선 괴리',sign(a.gap),a.gapS,50)}${row('52주 위치',a.pos.toFixed(0)+'%',a.posS,30)}${row('RSI',s.rsi,a.rsiS,20)}</tbody><tfoot><tr><td colspan="4">가격 점수</td><td class="num">${a.priceScore.toFixed(1)}</td></tr></tfoot></table></div></div>
+  <div><h3>PER: 1년 이익의 몇 배를 주고 사는가</h3>
+   <p>PER은 주가를 주당순이익으로 나눈 값입니다. 현재 ${s.pe}이므로, 회사가 한 주당 1년에 버는 이익의 ${s.pe}배를 주고 산다는 뜻입니다. ${peRead}</p>
+   <p>과거 ${N}개 연도 PER은 ${peMin}~${peMax}이고 중간값은 ${medPE}입니다. 회사마다 정상 PER이 달라 다른 회사가 아니라 <b>이 회사의 과거</b>와 비교합니다. 과거 값은 각 회계연도 말 가격과 그해 주당순이익으로 계산했습니다.</p></div>
+  <div><h3>FCF 수익률: 회사 전체를 산다면 1년에 현금이 얼마나 남는가</h3>
+   <p>시가총액 대비 실제로 남은 현금의 비율입니다. 현재 ${s.fcfy}%이므로 회사 전체를 100달러에 산다면 1년에 약 ${s.fcfy}달러의 현금이 남는다는 뜻입니다. 높을수록 쌉니다. 과거 ${N}개 연도 중 ${a.fcfBelow}개 연도보다 높습니다.</p>
+   <p>밸류 점수는 PER ${(a.peAbove/N*100).toFixed(0)}점 × 60% + FCF 수익률 ${(a.fcfBelow/N*100).toFixed(0)}점 × 40% = <b>${a.valScore.toFixed(1)}점</b>입니다. 과거 연도 중 현재보다 비쌌던 비율을 점수로 씁니다.</p></div>
+  <div><h3>기업 체력 ${a.health}/6: 싼 데 이유가 있는가</h3>
+   <p>주가가 싼 이유가 실적 악화인지 걸러내는 점검입니다. 3개 이하만 통과하면 경고합니다.</p>
+   <ul>${whyChecks.map((w,i)=>`<li>${a.checks[i][1]?'✓':'✕'} ${w}</li>`).join('')}</ul></div>
+  <div><h3>최종 판정: ${LABEL[a.v]}</h3>
+   <p>(가격 ${a.priceScore.toFixed(1)} + 밸류 ${a.valScore.toFixed(1)}) ÷ 2 = 평균 <b>${a.avg.toFixed(1)}점</b>입니다. 65 이상은 매력 구간, 35 이상은 보통, 그 아래는 기다리기입니다.${a.v==='risk'?` 평균은 높지만 체력이 ${a.health}/6이어서 "${LABEL.risk}"으로 바뀌었습니다.`:''}</p></div>
+  <div><h3>관심 가격: 어떻게 계산했나</h3>${interestTxt}</div>
+  <div><h3>과열 가격: ${money(a.over)}</h3>
+   <p>200일선에 25%를 더한 값입니다. 현재가 대비 ${sign(pctTo(s,a.over))}입니다. 이 위에서는 다른 점수와 상관없이 "기다리기"로 판정합니다. 그 가격에서 팔라는 뜻은 아니고, 새로 사지 않는 기준입니다.</p></div>
+  <div><h3>판정이 바뀌는 가격</h3>${flipTxt}</div>
+  <div><h3>이 판정을 믿으면 안 되는 경우</h3>
+   <ul>${a.spike?`<li>최근 이익이 최근 회계연도보다 ${((s.epsT/s.epsFY-1)*100).toFixed(0)}% 급증했습니다. 이익이 일시적으로 높은 때라면 PER이 실제보다 싸 보입니다.</li>`:''}
+   <li>회사의 사업이 크게 달라졌다면 과거 PER과 비교하는 의미가 줄어듭니다.</li>
+   <li>회계연도 말 ${N}개 값과만 비교해서 표본이 작습니다. 비교 대상이 하나만 바뀌어도 점수가 크게 움직일 수 있습니다.</li>
+   <li>기준값은 아직 과거 데이터로 검증하지 않았습니다. 뉴스, 경쟁 상황, 애널리스트 전망, 시장 전체 분위기도 반영되지 않았습니다.</li></ul></div>`;
+}
+const $=id=>document.getElementById(id);
+let cur=null,mode='long';
+function setMode(m){mode=m;$('mLong').setAttribute('aria-pressed',m==='long');$('mOld').setAttribute('aria-pressed',m==='old');render(cur)}
+function render(t){
+  cur=t;
+  const s=STOCKS.find(x=>x.t===t),a=analyze(s);
+  $('compare').hidden=$('explain').hidden=mode==='old';
+  $('pair').innerHTML=`<div class="old"><h3>짧은 설명</h3><p>${sentence(s,a)}</p></div><div class="new"><h3>풀어서 쓴 설명</h3><p>${summary(s,a)}</p></div>`;
+  $('long').innerHTML=explain(s,a);
+  document.querySelectorAll('.chip').forEach(c=>c.setAttribute('aria-pressed',c.dataset.t===t));
+  $('v').className='verdict '+a.v;
+  $('v').innerHTML=`<div><p class="name">${s.ko} · ${s.en} · ${s.t} · ${s.asof} 기준</p><p class="call">${LABEL[a.v]}</p>${mode==='old'?`<p class="say">${sentence(s,a)}</p>`:''}${a.spike?`<p class="warn">주의: 최근 이익이 최근 회계연도보다 ${((s.epsT/s.epsFY-1)*100).toFixed(0)}% 급증했습니다. 이익이 꺾이면 지금의 PER은 실제보다 싸 보이는 것일 수 있습니다.</p>`:''}</div>
+  <div class="meters">
+   <div><div class="meter-top"><span>가격 부담이 적은 정도</span><b class="num">${a.priceScore.toFixed(0)}/100</b></div><div class="bar"><i style="width:${a.priceScore}%"></i></div></div>
+   ${a.etf?`<p class="hint" style="margin:0">ETF는 가격 위치만으로 판정합니다. 실적 대비 평가와 기업 체력은 보지 않습니다.</p>`:`<div><div class="meter-top"><span>과거 대비 저렴한 정도</span><b class="num">${a.valScore.toFixed(0)}/100</b></div><div class="bar"><i style="width:${a.valScore}%"></i></div></div>
+   <div><div class="meter-top"><span>기업 체력 통과</span><b class="num">${a.health}/6</b></div><div class="segs">${[0,1,2,3,4,5].map(i=>`<i class="${i<a.health?'on':''}"></i>`).join('')}</div></div>`}
+  </div>`;
+  const lo=Math.min(s.lo,a.interest??s.lo,s.ma200)*.97, hi=Math.max(s.hi,a.over)*1.03, P=x=>(x-lo)/(hi-lo)*100;
+  const place=(x,cls,txt)=>{const p=P(x),st=p>70?`right:${100-p}%`:`left:${p}%`;return `<span class="tag ${cls} num" style="${st}">${txt}</span>`};
+  $('ruler').innerHTML=`<div class="ruler" role="img" aria-label="현재 가격 ${money(s.price)}, 200일선 ${money(s.ma200)}, 52주 범위 ${money(s.lo)}에서 ${money(s.hi)}">
+    <div class="track">${a.interest?`<div class="zone lo" style="width:${P(a.interest)}%"></div>`:''}<div class="zone hi" style="width:${100-P(a.over)}%"></div></div>
+    <div class="range" style="left:${P(s.lo)}%;width:${P(s.hi)-P(s.lo)}%" title="52주 범위 ${money(s.lo)}~${money(s.hi)}"></div>
+    <div class="tick" style="left:${P(s.ma200)}%" title="200일선 ${money(s.ma200)}"></div>
+    <div class="pin" style="left:${P(s.price)}%" title="현재 ${money(s.price)}"></div>
+    ${place(s.price,'now','현재 '+money(s.price))}${place(s.ma200,'ma','200일선 '+money(s.ma200))}
+  </div>
+  <dl class="keys">
+   <div><dt>관심 가격 (초록 구간)</dt><dd class="num">${a.interest?money(a.interest):'제시 안 함'}<small>${a.interest?`현재가 대비 ${sign(pctTo(s,a.interest))} · ${a.basis}`:'실적 회복 확인 필요'}</small></dd></div>
+   <div><dt>과열 가격 (빨간 구간)</dt><dd class="num">${money(a.over)}<small>현재가 대비 ${sign(pctTo(s,a.over))} · 200일선 +25%</small></dd></div>
+   <div><dt>200일선 괴리율</dt><dd class="num">${sign(a.gap)}<small>점선이 200일선입니다</small></dd></div>
+   <div><dt>52주 범위 (세로선 사이)</dt><dd class="num">${money(s.lo)} – ${money(s.hi)}<small>RSI ${s.rsi}</small></dd></div>
+  </dl>`;
+  $('fund').hidden=!!a.etf;
+  if(a.etf){$('cmp').querySelectorAll('tbody tr').forEach(r=>r.classList.toggle('sel',r.dataset.t===t));return}
+  const pips=n=>`<div class="pips" aria-hidden="true">${Array.from({length:a.n},(_,i)=>`<i class="${i<n?'on':''}"></i>`).join('')}</div>`;
+  $('val').innerHTML=`<div class="two" style="gap:10px"><div class="vrow">${pips(a.peAbove)}PER: ${a.n}개 연도 중 <b>${a.peAbove}개</b>보다 낮음</div><div class="vrow">${pips(a.fcfBelow)}FCF 수익률: ${a.n}개 연도 중 <b>${a.fcfBelow}개</b>보다 높음</div></div>
+  <div class="scroll"><table class="num"><thead><tr><th></th><th class="cur">현재</th>${s.fy.slice().reverse().map(f=>`<th>${f}</th>`).join('')}</tr></thead><tbody>
+  <tr><td>PER</td><td class="cur">${s.pe}</td>${s.peH.slice().reverse().map(x=>`<td>${x??'–'}</td>`).join('')}</tr>
+  <tr><td>FCF 수익률</td><td class="cur">${s.fcfy}%</td>${s.fcfH.slice().reverse().map(x=>`<td>${x==null?'–':x+'%'}</td>`).join('')}</tr></tbody></table></div>`;
+  $('health').innerHTML=a.checks.map(c=>`<li><span class="${c[1]?'ok':'no'}" aria-label="${c[1]?'통과':'미통과'}">${c[1]?'✓':'✕'}</span><span>${c[0]}</span><span class="num hint">${c[2]}</span></li>`).join('');
+  $('cmp').querySelectorAll('tbody tr').forEach(r=>r.classList.toggle('sel',r.dataset.t===t));
+}
+function find(q){q=q.trim().toLowerCase();if(!q)return null;
+  return STOCKS.find(s=>[s.t,s.ko,s.en].some(x=>x.toLowerCase()===q))||STOCKS.find(s=>[s.t,s.ko,s.en].some(x=>x.toLowerCase().includes(q)));}
+function boot(){
+$('snap').textContent=`${GENERATED} 갱신 · 관심 종목 ${STOCKS.length}개 · 종가 기준`;
+$('chips').innerHTML=STOCKS.map(s=>`<button type="button" class="chip" data-t="${s.t}">${s.ko}</button>`).join('');
+$('chips').addEventListener('click',e=>{const t=e.target.dataset.t;if(t){$('miss').hidden=true;render(t)}});
+$('f').addEventListener('submit',e=>{e.preventDefault();const s=find($('q').value);
+  if(s){$('miss').hidden=true;render(s.t)}else{$('miss').textContent='관심 종목에 없습니다. GitHub의 WATCHLIST에 추가하면 다음 갱신 때 나타납니다.';$('miss').hidden=false}});
+if(ERRORS.length){$('errs').textContent='판독하지 못한 종목: '+ERRORS.map(e=>`${e.t} (${e.why})`).join(', ');$('errs').hidden=false}
+$('cmp').innerHTML=`<thead><tr><th>종목</th><th>판정</th><th>현재가</th><th>200일선 괴리</th><th>52주 위치</th><th>PER</th><th>체력</th><th>관심 가격</th></tr></thead><tbody>${STOCKS.map(s=>{const a=analyze(s);return `<tr data-t="${s.t}"><td><button class="rowbtn" data-t="${s.t}">${s.ko}</button></td><td><span class="vtag ${a.v}">${LABEL[a.v]}</span></td><td class="num">${money(s.price)}</td><td class="num">${sign(a.gap)}</td><td class="num">${a.pos.toFixed(0)}%</td><td class="num">${s.pe??'–'}</td><td class="num">${a.etf?'ETF':a.health+'/6'}</td><td class="num">${a.interest?money(a.interest):'–'}</td></tr>`}).join('')}</tbody>`;
+$('cmp').addEventListener('click',e=>{const t=e.target.dataset.t;if(t){render(t);scrollTo({top:0,behavior:'smooth'})}});
+$('mLong').addEventListener('click',()=>setMode('long'));
+$('mOld').addEventListener('click',()=>setMode('old'));
+render(STOCKS[0].t);
+}
+const b64=t=>Uint8Array.from(atob(t),c=>c.charCodeAt(0));
+async function unlock(pass){
+  const r=await fetch('data.enc.json?'+Date.now(),{cache:'no-store'});
+  if(!r.ok)throw new Error('nodata');
+  const e=await r.json();
+  const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);
+  const key=await crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',salt:b64(e.salt),iterations:e.iter},base,{name:'AES-GCM',length:256},false,['decrypt']);
+  let plain;
+  try{plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(e.nonce)},key,b64(e.data))}catch{throw new Error('wrong')}
+  const d=JSON.parse(new TextDecoder().decode(plain));
+  STOCKS=d.stocks.map(s=>({...s,ko:esc(s.ko),en:esc(s.en)}));GENERATED=d.generated;ERRORS=d.errors.map(x=>({t:x.t,why:x.why}));
+  $('lock').hidden=true;$('app').hidden=false;boot();
+}
+const store={get(){try{return localStorage.getItem('bz-pass')}catch{return null}},set(v){try{v?localStorage.setItem('bz-pass',v):localStorage.removeItem('bz-pass')}catch{}}};
+async function tryOpen(pass,remember){
+  $('lockMsg').textContent='여는 중입니다.';
+  try{await unlock(pass);if(remember)store.set(pass)}
+  catch(err){store.set(null);$('lockMsg').textContent=err.message==='wrong'?'비밀번호가 맞지 않습니다. 다시 입력해 주세요.':err.message==='nodata'?'아직 첫 데이터 갱신 전입니다. GitHub Actions 실행이 끝난 뒤 다시 열어 주세요.':'결과를 여는 중 문제가 생겼습니다. 새로고침해 주세요.'}
+}
+$('lf').addEventListener('submit',e=>{e.preventDefault();tryOpen($('pw').value,$('keep').checked)});
+const saved=store.get();if(saved)tryOpen(saved,true);
+</script>
+</html>

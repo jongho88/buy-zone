@@ -1,0 +1,49 @@
+name: 판독 데이터 갱신
+
+on:
+  schedule:
+    - cron: "37 22 * * 1-5" # 미국 장 마감 뒤
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: buy-zone
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python -m unittest discover -s tests
+      - name: 데이터 받기와 암호화
+        env:
+          TIINGO_TOKEN: ${{ secrets.TIINGO_TOKEN }}
+          SEC_CONTACT: ${{ secrets.SEC_CONTACT }}
+          PAGE_PASSWORD: ${{ secrets.PAGE_PASSWORD }}
+          WATCHLIST: ${{ secrets.WATCHLIST }}
+        run: python scripts/update.py
+      - name: 암호화된 결과 저장
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/data.enc.json
+          git diff --cached --quiet || git commit -m "데이터 갱신"
+          git push
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deploy
+        uses: actions/deploy-pages@v4
