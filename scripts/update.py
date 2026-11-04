@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -37,6 +38,11 @@ def parse_watchlist(text):
             seen.add(ticker)
             out.append((ticker, label, is_etf))
     return out[:MAX_TICKERS]
+
+
+def describe(exc):
+    code = getattr(exc, "code", None)
+    return f"{type(exc).__name__} {code}" if code else type(exc).__name__
 
 
 def get_json(url, headers):
@@ -71,21 +77,27 @@ def main():
                 time.sleep(0.2)
                 stocks.append(compute_etf(ticker, label, prices))
                 continue
-            row = ciks.get(ticker)
-            if not row:
-                raise DataError("SEC에 등록된 미국 상장 종목을 찾지 못했습니다")
             prices = get_json(f"https://api.tiingo.com/tiingo/daily/{ticker}/prices?startDate={start}", tiingo)
             time.sleep(0.2)
-            facts = get_json(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{int(row['cik_str']):010d}.json", sec)
-            time.sleep(0.2)
-            stocks.append(compute(ticker, label, row["title"], prices, facts))
+            row = ciks.get(ticker)
+            try:
+                if not row:
+                    raise DataError("SEC에 등록된 미국 상장 종목을 찾지 못했습니다")
+                facts = get_json(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{int(row['cik_str']):010d}.json", sec)
+                time.sleep(0.2)
+                stocks.append(compute(ticker, label, row["title"], prices, facts))
+            except (DataError, urllib.error.URLError, KeyError, TypeError, ValueError, ZeroDivisionError) as exc:
+                why = str(exc) if isinstance(exc, DataError) else f"재무 자료 처리 오류 ({describe(exc)})"
+                stocks.append({**compute_etf(ticker, label or (row or {}).get("title", ""), prices), "noFin": True, "why": why})
         except DataError as exc:
             errors.append({"t": ticker, "why": str(exc)})
         except Exception as exc:  # 한 종목 실패가 전체를 멈추지 않게 한다
-            errors.append({"t": ticker, "why": f"데이터를 받지 못했습니다 ({type(exc).__name__})"})
+            errors.append({"t": ticker, "why": f"시세를 받지 못했습니다 ({describe(exc)})"})
 
     print(f"판독 성공 {len(stocks)}건, 실패 {len(errors)}건")
-    for why in sorted({e["why"] for e in errors}):  # 사유에는 종목 이름이 들어가지 않는다
+    reasons = {e["why"] for e in errors} | {s["why"] for s in stocks if s.get("noFin")}
+    print(f"재무 없이 가격만 판독 {sum(1 for s in stocks if s.get('noFin'))}건")
+    for why in sorted(reasons):  # 사유에는 종목 이름이 들어가지 않는다
         print(f"실패 사유: {why}")
     if not stocks:
         print("판독에 성공한 종목이 없어 기존 결과를 유지합니다.")
