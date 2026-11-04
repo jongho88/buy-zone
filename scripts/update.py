@@ -85,6 +85,8 @@ def main():
             errors.append({"t": ticker, "why": f"데이터를 받지 못했습니다 ({type(exc).__name__})"})
 
     print(f"판독 성공 {len(stocks)}건, 실패 {len(errors)}건")
+    for why in sorted({e["why"] for e in errors}):  # 사유에는 종목 이름이 들어가지 않는다
+        print(f"실패 사유: {why}")
     if not stocks:
         print("판독에 성공한 종목이 없어 기존 결과를 유지합니다.")
         return 1
